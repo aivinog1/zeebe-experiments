@@ -1,0 +1,104 @@
+version: "3"
+
+services:
+  zeebe-broker-1:
+    image: camunda/zeebe:1.2.9
+    container_name: zeebe-broker-1
+    environment:
+      - ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_CLASSNAME=io.camunda.zeebe.exporter.ElasticsearchExporter
+      - ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_URL=http://elasticsearch:9200
+      - ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_BULK_SIZE=1
+      - ZEEBE_BROKER_CLUSTER_NODEID=0
+      - ZEEBE_BROKER_CLUSTER_PARTITIONSCOUNT=2
+      - ZEEBE_BROKER_CLUSTER_REPLICATIONFACTOR=1
+      - ZEEBE_BROKER_CLUSTER_CLUSTERSIZE=1
+      - ZEEBE_BROKER_CLUSTER_INITIALCONTACTPOINTS=zeebe-broker-1:26502
+    networks:
+      - camunda-cloud
+    depends_on:
+      - elasticsearch
+
+  zeebe-gateway-1:
+    image: camunda/zeebe:1.2.9
+    container_name: zeebe-gateway-1
+    environment:
+      - ZEEBE_STANDALONE_GATEWAY=true
+      - ZEEBE_GATEWAY_NETWORK_HOST=0.0.0.0
+      - ZEEBE_GATEWAY_NETWORK_PORT=26500
+      - ZEEBE_GATEWAY_CLUSTER_CONTACTPOINT=zeebe-broker-1:26502
+      - ZEEBE_GATEWAY_CLUSTER_PORT=26502
+      - ZEEBE_GATEWAY_CLUSTER_HOST=zeebe-gateway-1
+    ports:
+      - 26500:26500
+    networks:
+      - camunda-cloud
+    depends_on:
+      - zeebe-broker-1
+
+  zeebe-gateway-2:
+    image: camunda/zeebe:1.2.9
+    container_name: zeebe-gateway-2
+    environment:
+      - ZEEBE_STANDALONE_GATEWAY=true
+      - ZEEBE_GATEWAY_NETWORK_HOST=0.0.0.0
+      - ZEEBE_GATEWAY_NETWORK_PORT=26500
+      - ZEEBE_GATEWAY_CLUSTER_CONTACTPOINT=zeebe-broker-1:26502
+      - ZEEBE_GATEWAY_CLUSTER_PORT=26502
+      - ZEEBE_GATEWAY_CLUSTER_HOST=zeebe-gateway-2
+    ports:
+      - 27500:26500
+    networks:
+      - camunda-cloud
+    depends_on:
+      - zeebe-broker-1
+
+  operate:
+    image: camunda/operate:1.2.9
+    container_name: operate
+    environment:
+      - CAMUNDA_OPERATE_ZEEBE_GATEWAYADDRESS=zeebe-gateway-1:26500
+      - CAMUNDA_OPERATE_ELASTICSEARCH_URL=http://elasticsearch:9200
+      - CAMUNDA_OPERATE_ZEEBEELASTICSEARCH_URL=http://elasticsearch:9200
+    ports:
+      - 8080:8080
+    networks:
+      - camunda-cloud
+    depends_on:
+      - elasticsearch
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.16.2
+    container_name: elasticsearch
+    environment:
+      - cluster.name=camunda-cloud
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    networks:
+      - camunda-cloud
+
+  script-worker:
+    image: ghcr.io/camunda-community-hub/zeebe-script-worker:1.1.0
+    container_name: script-worker
+    environment:
+      - zeebe.client.broker.contactPoint=host.docker.internal:9000
+    depends_on:
+      - zeebe-gateway-1
+      - zeebe-gateway-2
+
+  http-worker:
+    image: ghcr.io/camunda-community-hub/zeebe-http-worker:1.2.0
+    container_name: http-worker
+    environment:
+      - zeebe.client.broker.contactPoint=host.docker.internal:9000
+    depends_on:
+      - zeebe-gateway-1
+      - zeebe-gateway-2
+
+networks:
+  camunda-cloud:
+    driver: bridge
